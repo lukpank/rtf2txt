@@ -40,7 +40,7 @@ func readControl(r peekingReader.Reader, s *stack, text *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	if control == "*" { // this is an extended control sequence
+	if control == "*" || control == "stylesheet" { // this is an extended control sequence or a stylesheet
 		err := readUntilClosingBrace(r)
 		if err != nil {
 			return err
