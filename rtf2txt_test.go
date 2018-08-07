@@ -46,31 +46,31 @@ func TestReadControl(t *testing.T) {
 	var s stack
 	var text bytes.Buffer
 	r := peekingReader.NewMemReader([]byte(""))
-	if err := readControl(r, &s, &text); err != io.EOF {
+	if _, err := readControl(r, &s, &text); err != io.EOF {
 		t.Error("expected error", err)
 	}
 
 	// no closing brace. Should error
 	r = peekingReader.NewMemReader([]byte("*\rsidtbl \rs"))
-	if err := readControl(r, &s, &text); err != io.EOF {
+	if _, err := readControl(r, &s, &text); err != io.EOF {
 		t.Error("expected error", err)
 	}
 
 	// no parameters found, no previous control to get params for
 	r = peekingReader.NewMemReader([]byte("*\rsidtbl \rs}"))
-	if err := readControl(r, &s, &text); err != nil {
+	if _, err := readControl(r, &s, &text); err != nil {
 		t.Error("expected success", err)
 	}
 
 	// unicode
 	r = peekingReader.NewMemReader([]byte("'A9 "))
-	if err := readControl(r, &s, &text); err != nil || text.String() != "©" {
+	if _, err := readControl(r, &s, &text); err != nil || text.String() != "©" {
 		t.Error("expected success", err, text.String())
 	}
 	text.Reset()
 
 	r = peekingReader.NewMemReader([]byte("\\\\"))
-	if err := readControl(r, &s, &text); err != nil || text.String() != "\\" {
+	if _, err := readControl(r, &s, &text); err != nil || text.String() != "\\" {
 		t.Error("expected success", err, text.String())
 	}
 	text.Reset()
@@ -78,26 +78,26 @@ func TestReadControl(t *testing.T) {
 	// carriage return
 	r = peekingReader.NewMemReader([]byte(`
 `))
-	if err := readControl(r, &s, &text); err != nil || text.String() != "\n" {
+	if _, err := readControl(r, &s, &text); err != nil || text.String() != "\n" {
 		t.Error("expected success", err, text.String())
 	}
 	text.Reset()
 
 	// binary data error
 	r = peekingReader.NewMemReader([]byte(`bin412`))
-	if err := readControl(r, &s, &text); err != io.EOF {
+	if _, err := readControl(r, &s, &text); err != io.EOF {
 		t.Error("expected success", err, text.String())
 	}
 
 	// binary data success
 	r = peekingReader.NewMemReader([]byte(`bin22 1234567890123456789012 hello}`))
-	if err := readControl(r, &s, &text); err != nil || text.String() != "" {
+	if _, err := readControl(r, &s, &text); err != nil || text.String() != "" {
 		t.Error("expected success", err, text.String())
 	}
 
 	// truncated parameter
 	r = peekingReader.NewMemReader([]byte(`f463 hi`))
-	if err := readControl(r, &s, &text); err != io.EOF {
+	if _, err := readControl(r, &s, &text); err != io.EOF {
 		t.Error("expected success", err, text.String())
 	}
 }

@@ -19,58 +19,71 @@ func Text(r io.Reader) (*bytes.Buffer, error) {
 
 	var text bytes.Buffer
 	var symbolStack stack
+	var skipCnt = 0
 	for b, err := pr.ReadByte(); err == nil; b, err = pr.ReadByte() {
 		switch b {
 		case '\\':
-			err := readControl(pr, &symbolStack, &text)
+			n := text.Len()
+			skip, err := readControl(pr, &symbolStack, &text)
 			if err != nil {
 				return nil, err
+			}
+			if skipCnt > 0 {
+				text.Truncate(n)
+				skipCnt--
+			}
+			if skip {
+				skipCnt++
 			}
 		case '{', '}':
 		case '\n', '\r': // noop
 		default:
-			text.WriteByte(b)
+			if skipCnt > 0 {
+				skipCnt--
+			} else {
+				text.WriteByte(b)
+			}
 		}
 	}
 	return &text, nil
 }
 
-func readControl(r peekingReader.Reader, s *stack, text *bytes.Buffer) error {
+func readControl(r peekingReader.Reader, s *stack, text *bytes.Buffer) (bool, error) {
 	control, num, err := tokenizeControl(r)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if control == "*" || control == "stylesheet" { // this is an extended control sequence or a stylesheet
 		err := readUntilClosingBrace(r)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if last := s.Peek(); last != "" {
 			val, err := getParams(r) // last control was interrupted, so finish handling Params
 			handleParams(control, val, text)
-			return err
+			return false, err
 		}
-		return nil
+		return false, nil
 	}
-	if isUnicode, u := getUnicode(control); isUnicode {
+	if isUnicode, skip, u := getUnicode(r, control, num); isUnicode {
 		text.WriteString(u)
-		return nil
+		return skip, nil
 	}
 	if control == "" {
 		p, err := r.Peek(1)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if p[0] == '\\' || p[0] == '{' || p[0] == '}' { // this is an escaped character
 			text.WriteByte(p[0])
 			r.ReadByte()
-			return nil
+			return false, nil
 		}
 		text.WriteByte('\n')
-		return nil
+		return false, nil
 	}
 	if control == "binN" {
-		return handleBinary(r, control, num)
+		return false, handleBinary(r, control, num)
 	}
 
 	if symbol, found := convertSymbol(control); found {
@@ -79,11 +92,11 @@ func readControl(r peekingReader.Reader, s *stack, text *bytes.Buffer) error {
 
 	val, err := getParams(r)
 	if err != nil {
-		return err
+		return false, err
 	}
 	handleParams(control, val, text)
 	s.Push(control)
-	return nil
+	return false, nil
 }
 
 func tokenizeControl(r peekingReader.Reader) (string, int, error) {
@@ -147,9 +160,13 @@ func canonicalize(control string, numStart int) (string, int) {
 	return control[:numStart] + "N", num
 }
 
-func getUnicode(control string) (bool, string) {
+func getUnicode(r peekingReader.Reader, control string, num int) (bool, bool, string) {
+	if control == "uN" {
+		return true, true, string(rune(num))
+	}
+
 	if len(control) < 2 || control[0] != '\'' {
-		return false, ""
+		return false, false, ""
 	}
 
 	var buf bytes.Buffer
@@ -162,8 +179,8 @@ func getUnicode(control string) (bool, string) {
 		}
 	}
 	after := control[buf.Len()+1:]
-	num, _ := strconv.ParseInt(buf.String(), 16, 16)
-	return true, fmt.Sprintf("%c%s", num, after)
+	num64, _ := strconv.ParseInt(buf.String(), 16, 16)
+	return true, false, fmt.Sprintf("%c%s", num64, after)
 }
 
 func getParams(r peekingReader.Reader) (string, error) {
